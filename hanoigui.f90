@@ -1,6 +1,6 @@
 module hanoigui_mod
   use raylib
-  use iso_c_binding, only : cf=>c_float, c_bool, c_null_char, c_int
+  use iso_c_binding, only : cf=>c_float, c_bool, c_null_char, c_int, c_char, c_f_pointer
   implicit none(type, external)
 
   integer(c_int), parameter :: WINDOW_WIDTH=800, WINDOW_HEIGHT=600, TARGET_FPS=30
@@ -28,7 +28,8 @@ module hanoigui_mod
     PINK, LIME, BLUE, ORANGE, GOLD, GREEN, MAROON, RED, DARKGREEN, &
     SKYBLUE, DARKPURPLE, DARKBLUE, PURPLE, VIOLET, BEIGE, BROWN, DARKBROWN ]
 
-  integer, parameter :: STATE_NORMAL=0, STATE_SRC_SELECTED=1, STATE_MOVING=2
+  integer, parameter :: STATE_NORMAL=0, STATE_SRC_SELECTED=1, STATE_MOVING=2, &
+    STATE_DROP_SCRIPTFILE=3
 
   type scene_t
     type(rectangle_type), allocatable :: boxes(:), newboxes(:) 
@@ -44,6 +45,8 @@ module hanoigui_mod
   end type
 
   type(scene_t) :: sc ! global to keep the state
+
+  type(file_path_list_type) :: dropped_files
 
 contains
 
@@ -103,6 +106,32 @@ contains
       if (is_key_pressed(KEY_Z)) then
         sc%moving_style = mod(sc%moving_style,2)+1
         print *, 'Now moving style changed to ',sc%moving_style
+      end if
+      if (is_key_pressed(KEY_A)) then
+        call initialize(0)
+        sc%state = STATE_DROP_SCRIPTFILE
+      end if
+
+      ! drop file
+      if (sc%state==STATE_DROP_SCRIPTFILE) then
+        if (is_file_dropped()) then
+          dropped_files = load_dropped_files()
+          block
+            !character(kind=c_char,len=1), pointer :: paths
+            integer(1), pointer :: paths(:)
+            integer :: i
+            call c_f_pointer(dropped_files%paths, paths, [100])! [dropped_files%capacity])
+            print *, 'count ',dropped_files%count
+            print *, 'capacity ',dropped_files%capacity
+            do i=1, 20 !dropped_files%capacity
+             !if (paths(i)==0) exit
+              write(*,'(i0,1x)',advance='no') paths(i)
+            end do
+            write(*,*)
+           !call draw_text(paths(1), 20,300,10,BLACK)
+          end block
+          call unload_dropped_files(dropped_files)
+        end if
       end if
     end do
   end subroutine hanoimain
@@ -171,7 +200,7 @@ contains
         call draw_text(text, (WINDOW_WIDTH-text_width)/2, 150, fsize, BLACK)
         text_width = measure_text(text2, fsize2)
         call draw_text(text2, (WINDOW_WIDTH-text_width)/2, 250, fsize2, BLACK)
-      else if (all(sc%axles==1) .and. sc%moves_counter<1) then
+      else if (all(sc%axles==1) .and. sc%moves_counter<1 .and. size(sc%axles)/=0) then
         text_width = measure_text(text3, fsize2)
         call draw_text(text3, (WINDOW_WIDTH-text_width)/2, 250, fsize2, BLACK)
       end if
@@ -295,7 +324,7 @@ contains
 
 
   logical function is_win()
-    is_win = all(sc%axles==3)
+    is_win = all(sc%axles==3) .and. size(sc%axles)/=0
   end function
 
 
