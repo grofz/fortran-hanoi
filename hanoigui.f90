@@ -19,7 +19,7 @@
 !   subroutine hanoimain()
 !   subroutine render_scene(sc)
 !   subroutine initialize(sc, n)
-!   subroutine move(source, dest, sc)
+!   subroutine execute_move(source, dest, sc)
 !   integer function get_focus() result(res)
 !   logical function is_valid_move(source, dest, sc)
 !   logical function is_win(rods)
@@ -34,22 +34,23 @@ module hanoigui_mod
   private
   public hanoimain
 
-  integer(c_int), parameter :: WINDOW_WIDTH=800, WINDOW_HEIGHT=600, TARGET_FPS=30
+  integer(c_int), parameter :: &
+    WINDOW_WIDTH=800_c_int, WINDOW_HEIGHT=600_c_int, TARGET_FPS=30_c_int
 
   real(cf), parameter :: &
     MARGIN_VERTICAL = 80.0_cf, &
     RODX(3) = [WINDOW_WIDTH/4.0_cf, WINDOW_WIDTH/2.0_cf, 3*WINDOW_WIDTH/4.0_cf], &
     RODY = WINDOW_HEIGHT - MARGIN_VERTICAL, &
-    TURNING_POINT = WINDOW_HEIGHT/5.0_cf, &               ! how high rings jump during movement
-    MOVING_TIMES(3) = [0.25_cf, 0.12_cf, 0.02_cf], &      ! animation duration in seconds
-    SCRIPT_STEP_TIMES(3) = [0.35_cf, 0.02_cf, 0.00_cf], & ! time between moves in the scriptfile
+    ANIMATION_PEAK_Y = WINDOW_HEIGHT/5.0_cf, &            ! how high rings jump during movement
+    MOVE_DURATION(3) = [0.25_cf, 0.12_cf, 0.02_cf], &     ! animation duration in seconds
+    SCRIPT_STEP_DELAY(3) = [0.35_cf, 0.02_cf, 0.00_cf], & ! time between moves in the scriptfile
     RING_MAXW = WINDOW_WIDTH/5.0_cf, RING_MINW = 40.0_cf, &
     RING_HEIGHT = 25.0_cf, RING_MAXDX = 35.0_cf, &
     BASE_WIDTH = RING_MAXW+0.7_cf*RING_MAXDX, &
     BASE_HEIGHT = RING_HEIGHT/3.0_cf, &
     FOCUS_LINE_THICK = 2.0_cf
 
-  integer, parameter :: DEFAULT_MOVING_STYLE = 2 ! 1-jumping or 2-straight
+  integer, parameter :: DEFAULT_MOVING_ANIMATION_MODE = 2 ! 1-jumping or 2-straight
 
   type(rectangle_type), parameter :: FOCUS_RECT(3) = [ &
     rectangle_type(RODX(1)-BASE_WIDTH/2.0_cf, MARGIN_VERTICAL, BASE_WIDTH, WINDOW_HEIGHT-2*MARGIN_VERTICAL+BASE_HEIGHT+FOCUS_LINE_THICK), &
@@ -76,8 +77,8 @@ module hanoigui_mod
     integer :: top(3) ! index of the top ring on each rod
     integer :: moves_counter
     real(cf) :: timer, script_timer
-    integer :: moving_style = DEFAULT_MOVING_STYLE ! not updated by "init"
-    integer :: speed_id
+    integer :: moving_animation_mode = DEFAULT_MOVING_ANIMATION_MODE ! not updated by "init"
+    integer :: speed_level
     character(len=512) :: filename='' ! not updated by "init"
   end type
 
@@ -112,7 +113,7 @@ contains
           if (focus>3 .or. focus==sc%selected_source) then
             sc%state = STATE_NORMAL ! un-select
           else if (is_valid_move(sc%selected_source, focus, sc)) then
-            call move(sc%selected_source, focus, sc)
+            call execute_move(sc%selected_source, focus, sc)
             sc%state = STATE_NORMAL
           end if
         end select
@@ -152,7 +153,7 @@ contains
       ! animate ring movement
       if (is_ring_moved(sc)) then
         sc%timer = sc%timer + get_frame_time()
-        if (sc%timer >= MOVING_TIMES(sc%speed_id)) then ! move finished
+        if (sc%timer >= MOVE_DURATION(sc%speed_level)) then ! move finished
           sc%moved_ring_id = 0
         end if
       end if
@@ -160,7 +161,7 @@ contains
       ! re-play from the file
       PLAYSCRIPT: if (sc%state==STATE_PLAYSCRIPT .and. .not. is_ring_moved(sc)) then
         sc%script_timer = sc%script_timer + get_frame_time()
-        if (sc%script_timer >= SCRIPT_STEP_TIMES(sc%speed_id)) then
+        if (sc%script_timer >= SCRIPT_STEP_DELAY(sc%speed_level)) then
           ! read a next step from the file
           READSTEP: block
             integer :: ios, from, to
@@ -179,9 +180,9 @@ contains
               print '("Closing file due to invalid move")'
             else
               ! step ok
-              if (sc%speed_id < size(MOVING_TIMES)) &
+              if (sc%speed_level < size(MOVE_DURATION)) &
                 print '("Moving ring from ",i0," to ",i0)',from, to
-              call move(from, to, sc)
+              call execute_move(from, to, sc)
               sc%script_timer = 0.0_cf
               exit READSTEP
             end if
@@ -205,16 +206,16 @@ contains
 
       ! modify moving style, play speed, print screen, etc...
       if (is_key_pressed(KEY_Z)) then
-        sc%moving_style = mod(sc%moving_style,2)+1
-        print '("Moving style is now ",i0)',sc%moving_style
+        sc%moving_animation_mode = mod(sc%moving_animation_mode,2)+1
+        print '("Moving style is now ",i0)',sc%moving_animation_mode
       end if
-      if (is_key_pressed(KEY_KP_ADD) .and. sc%speed_id<size(MOVING_TIMES)) then
-        sc%speed_id = sc%speed_id+1
-        print '("Speed is now increased to ",i0)',sc%speed_id
+      if (is_key_pressed(KEY_KP_ADD) .and. sc%speed_level<size(MOVE_DURATION)) then
+        sc%speed_level = sc%speed_level+1
+        print '("Speed is now increased to ",i0)',sc%speed_level
       end if
-      if (is_key_pressed(KEY_KP_SUBTRACT) .and. sc%speed_id>1) then
-        sc%speed_id = sc%speed_id-1
-        print '("Speed is now decreased to ",i0)',sc%speed_id
+      if (is_key_pressed(KEY_KP_SUBTRACT) .and. sc%speed_level>1) then
+        sc%speed_level = sc%speed_level-1
+        print '("Speed is now decreased to ",i0)',sc%speed_level
       end if
       if (is_key_pressed(KEY_PRINT_SCREEN)) then
         call take_screenshot('hanoi_screenshot.png'//c_null_char)
@@ -231,7 +232,6 @@ contains
         sc%state = STATE_NORMAL
       end if
     end do CONTROL_LOOP
-
   end subroutine hanoimain
 
 
@@ -259,7 +259,7 @@ contains
       else
         block ! animate movement
           type(rectangle_type) :: box
-          box = animate(sc%moved_ring_old_rect, sc%rings(i), sc%timer/MOVING_TIMES(sc%speed_id), sc%moving_style)
+          box = animate(sc%moved_ring_old_rect, sc%rings(i), sc%timer/MOVE_DURATION(sc%speed_level), sc%moving_animation_mode)
           call draw_rectangle_pro(box, vector2_type(box%width/2.0_cf, RING_HEIGHT/2.0_cf), 0.0_cf, RING_COLORS(i))
         end block
       end if
@@ -361,17 +361,17 @@ contains
     sc%moves_counter = 0
     sc%timer = 0.0_cf
     sc%script_timer = 0.0_cf
-    sc%speed_id = 1
+    sc%speed_level = 1
   end subroutine initialize
 
 
-  pure subroutine move(from, to, sc)
+  pure subroutine execute_move(from, to, sc)
     integer, intent(in) :: from, to
     type(scene_t), intent(inout) :: sc
 
     integer :: i
 
-    if (.not. is_valid_move(from,to,sc)) error stop 'ERROR ERROR should not happen'
+    if (.not. is_valid_move(from,to,sc)) error stop 'Internal logic error: invalid move'
 
     ! mark ring to be moved
     sc%moved_ring_id = sc%top(from)
@@ -406,7 +406,7 @@ contains
 
     ! update counter
     sc%moves_counter = sc%moves_counter+1
-  end subroutine move
+  end subroutine execute_move
 
 
   integer function get_focus() result(res)
@@ -454,28 +454,28 @@ contains
   end function is_ring_moved
 
 
-  pure type(rectangle_type) function animate(posb, posf, f, moving_style) result(pos)
-    type(rectangle_type), intent(in) :: posb, posf
-    real(cf), intent(in) :: f
-    integer, intent(in) :: moving_style
+  pure type(rectangle_type) function animate(start_rect, end_rect, f, animation_mode) result(rect)
+    type(rectangle_type), intent(in) :: start_rect, end_rect
+    real(cf), intent(in) :: f ! move progress, between 0.0 and 1.0
+    integer, intent(in) :: animation_mode
 
     real(cf) :: vertical_distance
 
-    pos%width = posb%width
-    pos%height = posb%height
-    pos%x = posb%x * (1.0_cf-f) + posf%x * f
+    rect%width = start_rect%width
+    rect%height = start_rect%height
+    rect%x = start_rect%x * (1.0_cf-f) + end_rect%x * f
 
-    select case (moving_style)
+    select case (animation_mode)
     case(1)
-      if (posb%x==posf%x) then
-        vertical_distance = 0.0
+      if (start_rect%x==end_rect%x) then
+        vertical_distance = 0.0_cf
       else
-        vertical_distance = posb%y + posf%y - (2.0_cf*TURNING_POINT)
+        vertical_distance = start_rect%y + end_rect%y - (2.0_cf*ANIMATION_PEAK_Y)
       end if
-      pos%y = posb%y - f*vertical_distance
-      if (pos%y < TURNING_POINT) pos%y = 2.0_cf*TURNING_POINT - pos%y
+      rect%y = start_rect%y - f*vertical_distance
+      if (rect%y < ANIMATION_PEAK_Y) rect%y = 2.0_cf*ANIMATION_PEAK_Y - rect%y
     case(2)
-      pos%y = posb%y * (1.0_cf-f) + posf%y * f
+      rect%y = start_rect%y * (1.0_cf-f) + end_rect%y * f
     case default
       error stop 'error - unknown animation mode'
     end select
