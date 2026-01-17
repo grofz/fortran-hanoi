@@ -14,17 +14,9 @@
 ! TO-DO LIST
 ! - drop file functionality (could not get it working in Windows)
 !
-! CONTENT
+! CONTENT (public entities only)
 ! module hanoigui_mod
 !   subroutine hanoimain()
-!   subroutine render_scene(sc)
-!   subroutine initialize(sc, n)
-!   subroutine execute_move(source, dest, sc)
-!   integer function get_focus() result(res)
-!   logical function is_valid_move(source, dest, sc)
-!   logical function is_win(rods)
-!   logical function is_ring_moved(sc)
-!   type(rectangle_type) function animate(posb, posf, f, moving_style) result(pos)
 !
 module hanoigui_mod
   use raylib
@@ -78,7 +70,7 @@ module hanoigui_mod
     integer :: moved_ring_id
     type(rectangle_type) :: moved_ring_old_rect
     integer :: selected_source
-    integer :: top(3) ! index of the top ring on each rod
+    integer :: top_ring_id(3) ! index of the top ring on each rod
     integer :: moves_counter
     real(cf) :: timer, script_timer
     integer :: moving_animation_mode = DEFAULT_MOVING_ANIMATION_MODE ! not updated by "init"
@@ -108,7 +100,7 @@ contains
         select case(sc%state)
         case(STATE_NORMAL) ! select source?
           if (focus<=3) then
-            if (sc%top(focus)/=0) then
+            if (sc%top_ring_id(focus)/=0) then
               sc%selected_source = focus
               sc%state = STATE_SRC_SELECTED
             end if
@@ -116,7 +108,7 @@ contains
         case(STATE_SRC_SELECTED)
           if (focus>3 .or. focus==sc%selected_source) then
             sc%state = STATE_NORMAL ! un-select
-          else if (is_valid_move(sc%selected_source, focus, sc)) then
+          else if (is_valid_move(sc%selected_source, focus, sc%top_ring_id)) then
             call execute_move(sc%selected_source, focus, sc)
             sc%state = STATE_NORMAL
           end if
@@ -178,7 +170,7 @@ contains
               ! reading error
               write(*,'(a)') trim(iomsg)
               print '("Closing file due to read error")'
-            else if (.not. is_valid_move(from, to, sc)) then
+            else if (.not. is_valid_move(from, to, sc%top_ring_id)) then
               ! invalid move
               write(*,'("The move from ",i0," to ",i0," is not a valid move")') from, to 
               print '("Closing file due to invalid move")'
@@ -248,11 +240,11 @@ contains
     if (sc%state==STATE_SRC_SELECTED) then
       call draw_rectangle_lines_ex(FOCUS_RECT(sc%selected_source), FOCUS_LINE_THICK, BLUE)
       if (i<=3 .and. i/=sc%selected_source) then
-        if (is_valid_move(sc%selected_source,i,sc)) call draw_rectangle_lines_ex(FOCUS_RECT(i), FOCUS_LINE_THICK, BLACK)
+        if (is_valid_move(sc%selected_source,i,sc%top_ring_id)) call draw_rectangle_lines_ex(FOCUS_RECT(i), FOCUS_LINE_THICK, BLACK)
       end if
     else if (sc%state==STATE_NORMAL) then
       if (i<=3) then
-        if (sc%top(i)/=0) call draw_rectangle_lines_ex(FOCUS_RECT(i), FOCUS_LINE_THICK, BLACK)
+        if (sc%top_ring_id(i)/=0) call draw_rectangle_lines_ex(FOCUS_RECT(i), FOCUS_LINE_THICK, BLACK)
       end if
     end if
 
@@ -298,7 +290,7 @@ contains
       character(len=*), parameter :: text3 = 'Move all discs to the rightmost base'//c_null_char
       character(len=9) :: buffer
       if (sc%state==STATE_NORMAL) then
-        if (is_win(sc)) then
+        if (is_win(sc%rings%rod)) then
           text_width = measure_text(text, fsize)
           call draw_text(text, (WINDOW_WIDTH-text_width)/2, 150, fsize, BLACK)
           text_width = measure_text(text2, fsize2)
@@ -346,7 +338,7 @@ contains
     block
       integer :: i
       real(cf) :: dx
-      dx = min((RING_MAXW - RING_MINW) / (n-1), RING_MAXDX)
+      dx = min((RING_MAXW - RING_MINW) / (n-1), RING_MAXDX) ! difference between rings width
       do i=1, size(sc%rings)
         sc%rings(i)%rect%x = RODX(1)
         sc%rings(i)%rect%y = RODY - (i-0.5_cf)*RING_HEIGHT
@@ -354,6 +346,7 @@ contains
         sc%rings(i)%rect%height = RING_HEIGHT
         sc%rings(i)%rod = 1
         sc%rings(i)%level = i
+        sc%rings(i)%is_top_ring = .false.
       end do
     end block
     sc%rings(n)%is_top_ring = .true.
@@ -362,7 +355,7 @@ contains
     sc%moved_ring_id = 0
     sc%moved_ring_old_rect = rectangle_type(1.2_cf, 3.4_cf, 56.7_cf, 89.0_cf)
     sc%selected_source = 0
-    sc%top = [n, 0, 0]
+    sc%top_ring_id = [n, 0, 0]
     sc%moves_counter = 0
     sc%timer = 0.0_cf
     sc%script_timer = 0.0_cf
@@ -373,32 +366,34 @@ contains
   pure subroutine execute_move(from, to, sc)
     integer, intent(in) :: from, to
     type(scene_t), intent(inout) :: sc
-
+!
+! Move ring between rods. Update state to animate move by "render_scene"
+!
     integer :: i
 
-    if (.not. is_valid_move(from,to,sc)) error stop 'Internal logic error: invalid move'
+    if (.not. is_valid_move(from,to,sc%top_ring_id)) error stop 'Internal logic error: invalid move'
 
     ! mark ring to be moved
-    sc%moved_ring_id = sc%top(from)
+    sc%moved_ring_id = sc%top_ring_id(from)
     sc%timer = 0.0_cf
 
     ! find the next top ring on the originating rod
-    sc%top(from) = 0
+    sc%top_ring_id(from) = 0
     do i=size(sc%rings), 1, -1
       if (i==sc%moved_ring_id .or. sc%rings(i)%rod/=from) cycle
-      sc%top(from) = i
+      sc%top_ring_id(from) = i
       exit
     end do
 
     ! unmark top on the destination rod (if exists)
     ! update position of moved ring
-    if (sc%top(to)/=0) then
-       sc%rings(sc%top(to))%is_top_ring = .false.
-       sc%rings(sc%moved_ring_id)%level = sc%rings(sc%top(to))%level + 1
+    if (sc%top_ring_id(to)/=0) then
+       sc%rings(sc%top_ring_id(to))%is_top_ring = .false.
+       sc%rings(sc%moved_ring_id)%level = sc%rings(sc%top_ring_id(to))%level + 1
     else
       sc%rings(sc%moved_ring_id)%level = 1
     end if
-    sc%top(to) = sc%moved_ring_id
+    sc%top_ring_id(to) = sc%moved_ring_id
 
     ! update "rods" and the rectangle for moved ring
     sc%rings(sc%moved_ring_id)%rod = to
@@ -407,7 +402,7 @@ contains
     sc%rings(sc%moved_ring_id)%rect%y = RODY - (sc%rings(sc%moved_ring_id)%level-0.5_cf)*RING_HEIGHT
 
     ! mark new top on the originating column (if exists)
-    if (sc%top(from)/=0) sc%rings(sc%top(from))%is_top_ring = .true.
+    if (sc%top_ring_id(from)/=0) sc%rings(sc%top_ring_id(from))%is_top_ring = .true.
 
     ! update counter
     sc%moves_counter = sc%moves_counter+1
@@ -415,6 +410,10 @@ contains
 
 
   integer function get_focus() result(res)
+!
+! If mouse hoovers above a rod, return 1, 2 or 3.
+! Return 4 if mouse is positioned elsewhere.
+!
     integer :: i
     type(vector2_type) :: mpos
 
@@ -426,19 +425,19 @@ contains
   end function get_focus
 
 
-  pure logical function is_valid_move(from, to, sc)
+  pure logical function is_valid_move(from, to, top_ring_id)
     integer, intent(in) :: from, to
-    type(scene_t), intent(in) :: sc
+    integer, intent(in) :: top_ring_id(:)
 
     VALIDATE: block
       ! source must exist
       if (from<1 .or. from>3) exit VALIDATE
-      if (sc%top(from)<1) exit VALIDATE
+      if (top_ring_id(from)<1) exit VALIDATE
 
       ! source must not be bigger than destination
       if (to<1 .or. to>3 .or. to==from) exit VALIDATE
-      if (sc%top(to)>0) then
-        if (sc%top(to) > sc%top(from)) exit VALIDATE
+      if (top_ring_id(to)>0) then
+        if (top_ring_id(to) > top_ring_id(from)) exit VALIDATE
       end if
       is_valid_move = .true.
       return
@@ -447,9 +446,9 @@ contains
   end function is_valid_move
 
 
-  pure logical function is_win(sc)
-    type(scene_t), intent(in) :: sc
-    is_win = all(sc%rings%rod==3) .and. size(sc%rings)/=0
+  pure logical function is_win(rods)
+    integer, intent(in) :: rods(:)
+    is_win = all(rods==3) .and. size(rods)/=0
   end function is_win
 
 
