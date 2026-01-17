@@ -64,12 +64,16 @@ module hanoigui_mod
   integer, parameter :: STATE_NORMAL=0, STATE_SRC_SELECTED=1, &
     STATE_WAITFORFILE=3, STATE_PLAYSCRIPT=4
 
+  type ring_t
+    type(rectangle_type) :: rect
+    integer :: rod   ! rod id (1, 2 or 3)
+    integer :: level ! from the bottom to the top of the rod
+    logical :: is_top_ring = .false.
+  end type
+
   type scene_t
     ! all, but selected components initialized/updated by "init" procedure
-    type(rectangle_type), allocatable :: rings(:)
-    integer, allocatable :: rods(:)       ! 1, 2 or 3
-    integer, allocatable :: positions(:)  ! from the bottom to the top
-    logical, allocatable :: istop(:)
+    type(ring_t), allocatable :: rings(:)
     integer :: state
     integer :: moved_ring_id
     type(rectangle_type) :: moved_ring_old_rect
@@ -255,19 +259,24 @@ contains
     ! rings
     do i=1, size(sc%rings)
       if (i /= sc%moved_ring_id) then
-        call draw_rectangle_pro(sc%rings(i), vector2_type(sc%rings(i)%width/2.0_cf, RING_HEIGHT/2.0_cf), 0.0_cf, RING_COLORS(i))
+        call draw_rectangle_pro(sc%rings(i)%rect, &
+          vector2_type(sc%rings(i)%rect%width/2.0_cf, RING_HEIGHT/2.0_cf), 0.0_cf, RING_COLORS(i))
       else
         block ! animate movement
           type(rectangle_type) :: box
-          box = animate(sc%moved_ring_old_rect, sc%rings(i), sc%timer/MOVE_DURATION(sc%speed_level), sc%moving_animation_mode)
-          call draw_rectangle_pro(box, vector2_type(box%width/2.0_cf, RING_HEIGHT/2.0_cf), 0.0_cf, RING_COLORS(i))
+          box = animate(sc%moved_ring_old_rect, sc%rings(i)%rect, sc%timer/MOVE_DURATION(sc%speed_level), &
+            sc%moving_animation_mode)
+          call draw_rectangle_pro(box, &
+            vector2_type(box%width/2.0_cf, RING_HEIGHT/2.0_cf), 0.0_cf, RING_COLORS(i))
         end block
       end if
       ! outline of the top-most ring
-      if (sc%istop(i)) then
-        if (sc%state==STATE_SRC_SELECTED .and. sc%selected_source==sc%rods(i)) then
-          call draw_rectangle_lines_ex(rectangle_type(sc%rings(i)%x-sc%rings(i)%width/2.0_cf, sc%rings(i)%y-RING_HEIGHT/2.0_cf, sc%rings(i)%width, sc%rings(i)%height), &
-            2.0_cf, BLACK)
+      if (sc%rings(i)%is_top_ring) then
+        if (sc%state==STATE_SRC_SELECTED .and. sc%selected_source==sc%rings(i)%rod) then
+          call draw_rectangle_lines_ex(rectangle_type( &
+            x=sc%rings(i)%rect%x-sc%rings(i)%rect%width/2.0_cf, &
+            y=sc%rings(i)%rect%y-RING_HEIGHT/2.0_cf, &
+            width=sc%rings(i)%rect%width, height=sc%rings(i)%rect%height), 2.0_cf, BLACK)
         end if
       end if
     end do
@@ -289,12 +298,12 @@ contains
       character(len=*), parameter :: text3 = 'Move all discs to the rightmost base'//c_null_char
       character(len=9) :: buffer
       if (sc%state==STATE_NORMAL) then
-        if (is_win(sc%rods)) then
+        if (is_win(sc)) then
           text_width = measure_text(text, fsize)
           call draw_text(text, (WINDOW_WIDTH-text_width)/2, 150, fsize, BLACK)
           text_width = measure_text(text2, fsize2)
           call draw_text(text2, (WINDOW_WIDTH-text_width)/2, 250, fsize2, BLACK)
-        else if (all(sc%rods==1) .and. sc%moves_counter<1 .and. size(sc%rods)/=0) then
+        else if (all(sc%rings%rod==1) .and. sc%moves_counter<1 .and. size(sc%rings)/=0) then
           text_width = measure_text(text3, fsize2)
           call draw_text(text3, (WINDOW_WIDTH-text_width)/2, 250, fsize2, BLACK)
         end if
@@ -331,11 +340,7 @@ contains
     integer, intent(in) :: n
 
     if (allocated(sc%rings)) deallocate(sc%rings)
-    if (allocated(sc%rods)) deallocate(sc%rods)
-    if (allocated(sc%positions)) deallocate(sc%positions)
-    if (allocated(sc%istop)) deallocate(sc%istop)
-    allocate(sc%rings(n), sc%rods(n), sc%positions(n))
-    allocate(sc%istop(n), source=.false.)
+    allocate(sc%rings(n))
 
     ! place all rings at the leftmost rod
     block
@@ -343,15 +348,15 @@ contains
       real(cf) :: dx
       dx = min((RING_MAXW - RING_MINW) / (n-1), RING_MAXDX)
       do i=1, size(sc%rings)
-        sc%rings(i)%x = RODX(1)
-        sc%rings(i)%y = RODY - (i-0.5_cf)*RING_HEIGHT
-        sc%rings(i)%width = RING_MAXW - (i-1)*dx
-        sc%rings(i)%height = RING_HEIGHT
-        sc%rods(i) = 1
-        sc%positions(i) = i
+        sc%rings(i)%rect%x = RODX(1)
+        sc%rings(i)%rect%y = RODY - (i-0.5_cf)*RING_HEIGHT
+        sc%rings(i)%rect%width = RING_MAXW - (i-1)*dx
+        sc%rings(i)%rect%height = RING_HEIGHT
+        sc%rings(i)%rod = 1
+        sc%rings(i)%level = i
       end do
     end block
-    sc%istop(n) = .true.
+    sc%rings(n)%is_top_ring = .true.
 
     sc%state = STATE_NORMAL
     sc%moved_ring_id = 0
@@ -379,8 +384,8 @@ contains
 
     ! find the next top ring on the originating rod
     sc%top(from) = 0
-    do i=size(sc%rods), 1, -1
-      if (i==sc%moved_ring_id .or. sc%rods(i)/=from) cycle
+    do i=size(sc%rings), 1, -1
+      if (i==sc%moved_ring_id .or. sc%rings(i)%rod/=from) cycle
       sc%top(from) = i
       exit
     end do
@@ -388,21 +393,21 @@ contains
     ! unmark top on the destination rod (if exists)
     ! update position of moved ring
     if (sc%top(to)/=0) then
-       sc%istop(sc%top(to)) = .false.
-       sc%positions(sc%moved_ring_id) = sc%positions(sc%top(to)) + 1
+       sc%rings(sc%top(to))%is_top_ring = .false.
+       sc%rings(sc%moved_ring_id)%level = sc%rings(sc%top(to))%level + 1
     else
-      sc%positions(sc%moved_ring_id) = 1
+      sc%rings(sc%moved_ring_id)%level = 1
     end if
     sc%top(to) = sc%moved_ring_id
 
     ! update "rods" and the rectangle for moved ring
-    sc%rods(sc%moved_ring_id) = to
-    sc%moved_ring_old_rect = sc%rings(sc%moved_ring_id)
-    sc%rings(sc%moved_ring_id)%x = RODX(to)
-    sc%rings(sc%moved_ring_id)%y = RODY - (sc%positions(sc%moved_ring_id)-0.5_cf)*RING_HEIGHT
+    sc%rings(sc%moved_ring_id)%rod = to
+    sc%moved_ring_old_rect = sc%rings(sc%moved_ring_id)%rect
+    sc%rings(sc%moved_ring_id)%rect%x = RODX(to)
+    sc%rings(sc%moved_ring_id)%rect%y = RODY - (sc%rings(sc%moved_ring_id)%level-0.5_cf)*RING_HEIGHT
 
     ! mark new top on the originating column (if exists)
-    if (sc%top(from)/=0) sc%istop(sc%top(from)) = .true.
+    if (sc%top(from)/=0) sc%rings(sc%top(from))%is_top_ring = .true.
 
     ! update counter
     sc%moves_counter = sc%moves_counter+1
@@ -442,9 +447,9 @@ contains
   end function is_valid_move
 
 
-  pure logical function is_win(rods)
-    integer, intent(in) :: rods(:)
-    is_win = all(rods==3) .and. size(rods)/=0
+  pure logical function is_win(sc)
+    type(scene_t), intent(in) :: sc
+    is_win = all(sc%rings%rod==3) .and. size(sc%rings)/=0
   end function is_win
 
 
