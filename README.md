@@ -6,7 +6,7 @@ A classic puzzle of Hanoi Towers coded using Fortran.
 
 ## Installation
 
-### 1 Raylib
+### 1 Install Raylib library
 
 Download, build and install raylib library using instructions from here:
 - https://github.com/raysan5/raylib/wiki/Working-on-GNU-Linux
@@ -41,10 +41,17 @@ $ make
 
 ### 3 Tune the build script to your needs
 
-In `build.sh` set the path to the directory containing `fortran-raylib`
+In `build.sh` or `build.bat` set the path to the directory containing `fortran-raylib`
 code.
 
 ### 4 Compile and run the game
+
+```sh
+$ ./build.sh
+$ ./hanoi
+```
+
+or in Windows
 
 ```sh
 $ ./build.bat
@@ -53,7 +60,26 @@ $ ./hanoi.exe
 
 ## Instructions
 
-Use mouse to move rings.
+- Use left mouse button clicks to move rings between columns.
+- Press a number key '1', '2', etc. to restart the puzzle with the particular number of rings.
+- Press 'Z' to toggle animation style, press '+' and '-' to increase and decrease animation speed.
+- Press 'A' and then type the filename of the script with move instructions
 
-- Press a number key '1', '2', etc. anytime to restart the puzzle with particular number of rings
-- Press 'Z' anytime to toggle animation style
+### Script file
+
+Here is an example of a script file
+
+```
+3
+1 3
+1 2
+3 2
+1 3
+2 1
+2 3
+1 3
+```
+
+The number at the first line is the number of rings. The rest of the lines are
+instructions to move rings. For example, `1 3` is to move the ring from the
+leftmost (1) to the rightmost (3) base.
