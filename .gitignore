@@ -1,2 +1,7 @@
-*.exe
+# executable Win/Linux
+hanoi.exe
+hanoi
+# build files
 .mod/
+*.o
+*.mod

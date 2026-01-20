@@ -20,7 +20,8 @@
 !
 module hanoigui_mod
   use raylib
-  use iso_c_binding, only : cf=>c_float, c_bool, c_null_char, c_int, c_char, c_f_pointer
+  use raylib_util
+  use iso_c_binding, only : cf=>c_float, c_bool, c_null_char, c_int, c_char, c_f_pointer, c_ptr
   use iso_fortran_env, only : iostat_end
   implicit none(type, external)
   private
@@ -56,6 +57,9 @@ module hanoigui_mod
   integer, parameter :: STATE_NORMAL=0, STATE_SRC_SELECTED=1, &
     STATE_WAITFORFILE=3, STATE_PLAYSCRIPT=4
 
+  integer, parameter :: INPUT_MODE_DROP=1, INPUT_MODE_KEYBOARD=2
+  integer, parameter :: SELECTED_INPUT_MODE = INPUT_MODE_DROP
+
   type ring_t
     type(rectangle_type) :: rect
     integer :: rod   ! rod id (1, 2 or 3)
@@ -77,6 +81,17 @@ module hanoigui_mod
     integer :: speed_level
     character(len=512) :: filename='' ! not updated by "init"
   end type
+
+  interface
+    ! had to write C code to get file drop feature working
+    function file_path_wrapper(i, fpaths) bind(c, name='filePathWrapper')
+      import :: c_ptr, c_char, c_int, file_path_list_type
+      implicit none
+      integer(kind=c_int), value :: i
+      type(file_path_list_type), value :: fpaths
+      type(c_ptr) :: file_path_wrapper
+    end function
+  end interface
 
 contains
 
@@ -120,8 +135,28 @@ contains
         INIT_SCRIPT: block
           integer :: ios, nscript
           character(len=512) :: iomsg
-          write(*,'("HANOI - Enter file name: ")',advance='no')
-          read(*,*) sc%filename
+          type(file_path_list_type), allocatable :: dropped_files
+          character(len=:), allocatable :: dropped_filename
+
+          select case(SELECTED_INPUT_MODE)
+          case(INPUT_MODE_KEYBOARD) ! type filename to console
+            write(*,'("HANOI - Enter file name: ")',advance='no')
+            read(*,*) sc%filename
+          case(INPUT_MODE_DROP) ! input filename by dropping file
+            if (is_file_dropped()) then
+              dropped_files = load_dropped_files()
+              ! from raylib_utils
+              call c_f_str_ptr(file_path_wrapper(0,dropped_files), dropped_filename)
+              call unload_dropped_files(dropped_files)
+              print '("Opening """,a,"""")',dropped_filename
+              sc%filename = dropped_filename
+            else
+              ! keep waiting
+              exit INIT_SCRIPT
+            end if
+          end select
+
+          ! try to open file and read the number of rings from the file
           open(newunit=fid,file=sc%filename,iostat=ios,iomsg=iomsg,status='old')
           if (ios/=0) then
             ! error opening the file
@@ -131,8 +166,11 @@ contains
             if (ios/=0) then
               ! error reading rhe first line
               write(*,'(a)') trim(iomsg)
-            else if (nscript < 1 .or. nscript > 10) then
+              close(fid)
+            else if (nscript < 1 .or. nscript > min(size(RING_COLORS),15)) then
+              ! enforce reasonable number of rings
               write(*,'("Can not play for the number of rings ",i0)') nscript
+              close(fid)
             else
               ! ok to play script
               call initialize(sc, nscript)
@@ -140,8 +178,8 @@ contains
               exit INIT_SCRIPT
             end if
           end if
-          ! error occured while processing the file, return to normal 
-          print '("Could not play the script.")'
+          ! error occured while processing the file, return to normal state
+          print '("Could not play the script from file.")'
           sc%state = STATE_NORMAL
         end block INIT_SCRIPT
       end if WAITFORFILE
@@ -319,7 +357,14 @@ contains
         integer(c_int) :: text_width
         integer(c_int), parameter :: fsize = 35
         character(len=512) :: text
-        text = 'Enter file name in the console'//c_null_char
+        select case(SELECTED_INPUT_MODE)
+        case (INPUT_MODE_DROP)
+          text = 'Drop the script file here'//c_null_char
+        case (INPUT_MODE_KEYBOARD)
+          text = 'Enter file name in the console'//c_null_char
+        case default
+          text = 'Internal error: input mode unknown'//c_null_char
+        end select
         text_width = measure_text(text, fsize)
         call draw_text(text, (WINDOW_WIDTH-text_width)/2, 150, fsize, DARKBLUE)
       end block
