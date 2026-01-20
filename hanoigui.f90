@@ -328,7 +328,7 @@ contains
       character(len=*), parameter :: text3 = 'Move all discs to the rightmost base'//c_null_char
       character(len=9) :: buffer
       if (sc%state==STATE_NORMAL) then
-        if (is_win(sc%rings%rod)) then
+        if (is_win(sc%rings)) then
           text_width = measure_text(text, fsize)
           call draw_text(text, (WINDOW_WIDTH-text_width)/2, 150, fsize, BLACK)
           text_width = measure_text(text2, fsize2)
@@ -491,9 +491,9 @@ contains
   end function is_valid_move
 
 
-  pure logical function is_win(rods)
-    integer, intent(in) :: rods(:)
-    is_win = all(rods==3) .and. size(rods)/=0
+  pure logical function is_win(rings)
+    type(ring_t), intent(in) :: rings(:)
+    is_win = all(rings%rod==3) .and. size(rings)/=0
   end function is_win
 
 
