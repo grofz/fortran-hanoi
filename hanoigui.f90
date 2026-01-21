@@ -1,10 +1,10 @@
 ! Hanoi towers puzzle mini-game
 !
-! =======================================
-! | ©2026 Grof Z (grofz@vscht.cz)       |
-! | Licensed under the MIT License.     |
-! | Provided "as is", without warranty. |
-! =======================================
+!  ===========================================================
+! | ©2026 Grof Z (grofz@vscht.cz)                             |
+! | Licensed under the GNU AFFERO GENERAL PUBLIC LICENSE.     |
+! | Provided "as is", without warranty.                       |
+!  ===========================================================
 !
 ! DEPENDENCIES
 ! raylib library and fortran bindings for raylib
@@ -12,7 +12,7 @@
 ! - https://github.com/interkosmos/fortran-raylib
 !
 ! TO-DO LIST
-! - drop file functionality (could not get it working in Windows)
+! - none
 !
 ! CONTENT (public entities only)
 ! module hanoigui_mod
@@ -210,7 +210,7 @@ contains
               print '("Closing file due to read error")'
             else if (.not. is_valid_move(from, to, sc%top_ring_id)) then
               ! invalid move
-              write(*,'("The move from ",i0," to ",i0," is not a valid move")') from, to 
+              write(*,'("The move from ",i0," to ",i0," is not a valid move")') from, to
               print '("Closing file due to invalid move")'
             else
               ! step ok
@@ -350,23 +350,23 @@ contains
         character(len=512) :: text
         text = 'Scripting from file "'//trim(sc%filename)//'". Press X to cancel.'//c_null_char
         text_width = measure_text(text, fsize)
-        call draw_text(text, (WINDOW_WIDTH-text_width)/2, 150, fsize, DARKBLUE)
+        call draw_text(text, (WINDOW_WIDTH-text_width)/2, 150, fsize, BLUE)
       end block
     else if (sc%state==STATE_WAITFORFILE) then
       block
         integer(c_int) :: text_width
-        integer(c_int), parameter :: fsize = 35
+        integer(c_int), parameter :: fsize = 20
         character(len=512) :: text
         select case(SELECTED_INPUT_MODE)
         case (INPUT_MODE_DROP)
-          text = 'Drop the script file here'//c_null_char
+          text = 'Drag and drop the script file...'//c_null_char
         case (INPUT_MODE_KEYBOARD)
-          text = 'Enter file name in the console'//c_null_char
+          text = 'Enter file name in the console...'//c_null_char
         case default
           text = 'Internal error: input mode unknown'//c_null_char
         end select
         text_width = measure_text(text, fsize)
-        call draw_text(text, (WINDOW_WIDTH-text_width)/2, 150, fsize, DARKBLUE)
+        call draw_text(text, (WINDOW_WIDTH-text_width)/2, 150, fsize, BLACK)
       end block
     end if
   end subroutine render_scene

@@ -60,14 +60,15 @@ $ ./hanoi.exe
 
 ## Instructions
 
-- Use left mouse button clicks to move rings between columns.
-- Press a number key '1', '2', etc. to restart the puzzle with the particular number of rings.
-- Press 'Z' to toggle animation style, press '+' and '-' to increase and decrease animation speed.
-- Press 'A' and then type the filename of the script with move instructions
+- Use the left mouse button to move rings between columns (Click to select the base from which a segment is moved, and then click again to select the destination base.)
+- Press a number key ('1', '2', etc.) to restart the puzzle with the corresponding number of rings.
+- Press 'Z' to toggle animation style; press '+' or '-' to increase or
+decrease the animation (and the script replay) speed.
+- Press 'A', then drag and drop a script file containing move instructions onto the window
 
 ### Script file
 
-Here is an example of a script file
+Below is an example of a script file:
 
 ```
 3
@@ -80,6 +81,7 @@ Here is an example of a script file
 1 3
 ```
 
-The number at the first line is the number of rings. The rest of the lines are
-instructions to move rings. For example, `1 3` is to move the ring from the
-leftmost (1) to the rightmost (3) base.
+The number on the first line specifies the number of rings. Each subsequent
+line describes a single move. For example, `1 3` instructs the program
+to move the top ring from the
+leftmost base (1) to the rightmost base (3).
