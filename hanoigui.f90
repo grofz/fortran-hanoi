@@ -82,21 +82,11 @@ module hanoigui_mod
     character(len=512) :: filename='' ! not updated by "init"
   end type
 
-  interface
-    ! had to write C code to get file drop feature working
-    function file_path_wrapper(i, fpaths) bind(c, name='filePathWrapper')
-      import :: c_ptr, c_char, c_int, file_path_list_type
-      implicit none
-      integer(kind=c_int), value :: i
-      type(file_path_list_type), value :: fpaths
-      type(c_ptr) :: file_path_wrapper
-    end function
-  end interface
 
 contains
 
   subroutine hanoimain()
-    integer :: focus, fid
+    integer :: focus, fid, script_tower_size
     type(scene_t) :: sc ! root to keep the state
 
     call initialize(sc, 4)
@@ -131,58 +121,18 @@ contains
       end if
 
       ! wait for user to enter filename to the console
-      WAITFORFILE: if (sc%state==STATE_WAITFORFILE) then
-        INIT_SCRIPT: block
-          integer :: ios, nscript
-          character(len=512) :: iomsg
-          type(file_path_list_type), allocatable :: dropped_files
-          character(len=:), allocatable :: dropped_filename
-
-          select case(SELECTED_INPUT_MODE)
-          case(INPUT_MODE_KEYBOARD) ! type filename to console
-            write(*,'("HANOI - Enter file name: ")',advance='no')
-            read(*,*) sc%filename
-          case(INPUT_MODE_DROP) ! input filename by dropping file
-            if (is_file_dropped()) then
-              dropped_files = load_dropped_files()
-              ! from raylib_utils
-              call c_f_str_ptr(file_path_wrapper(0,dropped_files), dropped_filename)
-              call unload_dropped_files(dropped_files)
-              print '("Opening """,a,"""")',dropped_filename
-              sc%filename = dropped_filename
-            else
-              ! keep waiting
-              exit INIT_SCRIPT
-            end if
-          end select
-
-          ! try to open file and read the number of rings from the file
-          open(newunit=fid,file=sc%filename,iostat=ios,iomsg=iomsg,status='old')
-          if (ios/=0) then
-            ! error opening the file
-            write(*,'(a)') trim(iomsg)
-          else
-            read(fid,*,iostat=ios,iomsg=iomsg) nscript
-            if (ios/=0) then
-              ! error reading rhe first line
-              write(*,'(a)') trim(iomsg)
-              close(fid)
-            else if (nscript < 1 .or. nscript > min(size(RING_COLORS),15)) then
-              ! enforce reasonable number of rings
-              write(*,'("Can not play for the number of rings ",i0)') nscript
-              close(fid)
-            else
-              ! ok to play script
-              call initialize(sc, nscript)
-              sc%state = STATE_PLAYSCRIPT
-              exit INIT_SCRIPT
-            end if
-          end if
-          ! error occured while processing the file, return to normal state
-          print '("Could not play the script from file.")'
+      ! open the script file and verify if it is a valid one
+      if (sc%state==STATE_WAITFORFILE) then
+        call open_script(fid, sc%filename, script_tower_size)
+        if (script_tower_size == -1) then
+          ! file is not a valid script file
           sc%state = STATE_NORMAL
-        end block INIT_SCRIPT
-      end if WAITFORFILE
+        else if (script_tower_size /= 0) then
+          ! ok to start playing script
+          call initialize(sc, script_tower_size)
+          sc%state = STATE_PLAYSCRIPT
+        end if
+      end if
 
       ! animate ring movement
       if (is_ring_moved(sc)) then
@@ -529,6 +479,77 @@ contains
       error stop 'error - unknown animation mode'
     end select
   end function animate
+
+
+  subroutine open_script(fid, filename, tower_size)
+    integer, intent(out) :: fid
+    character(len=*), intent(inout) :: filename
+    integer, intent(out) :: tower_size
+!
+! Inquire file name, open script, read first line
+!
+    integer :: ios, nscript
+    character(len=512) :: iomsg
+    type(file_path_list_type), allocatable :: dropped_files
+    character(len=:), allocatable :: dropped_filename
+
+    interface
+      ! had to write C code to get file drop feature working
+      function file_path_wrapper(i, fpaths) bind(c, name='filePathWrapper')
+        import :: c_ptr, c_char, c_int, file_path_list_type
+        implicit none
+        integer(kind=c_int), value :: i
+        type(file_path_list_type), value :: fpaths
+        type(c_ptr) :: file_path_wrapper
+      end function
+    end interface
+
+    tower_size = 0 ! mark failure to open script by returning "0"
+
+    select case(SELECTED_INPUT_MODE)
+    case(INPUT_MODE_KEYBOARD) ! type filename to console
+      write(*,'("HANOI - Enter file name: ")',advance='no')
+      read(*,*) filename
+    case(INPUT_MODE_DROP) ! input filename by dropping file
+      if (is_file_dropped()) then
+        dropped_files = load_dropped_files()
+        ! from raylib_utils
+        call c_f_str_ptr(file_path_wrapper(0,dropped_files), dropped_filename)
+        call unload_dropped_files(dropped_files)
+        print '("Opening """,a,"""")',dropped_filename
+        filename = dropped_filename
+      else
+        ! keep waiting, will try again later
+        return
+      end if
+    end select
+
+    ! open file and read the tower size from the file
+    open(newunit=fid,file=filename,iostat=ios,iomsg=iomsg,status='old')
+    if (ios/=0) then
+      ! error opening the file
+      write(*,'(a)') trim(iomsg)
+      return
+    end if
+
+    read(fid,*,iostat=ios,iomsg=iomsg) nscript
+    if (ios/=0) then
+      ! error reading rhe first line
+      write(*,'(a)') trim(iomsg)
+    else if (nscript < 1 .or. nscript > min(size(RING_COLORS),15)) then
+      ! enforce reasonable number of rings
+      write(*,'("Can not play for the number of rings ",i0)') nscript
+    else
+      ! script opened succesfully
+      tower_size = nscript
+      return
+    end if
+
+    ! error occured while processing the file, return to normal state
+    close(fid)
+    print '("Could not play the script from file.")'
+    tower_size = -1
+  end subroutine open_script
 
 end module hanoigui_mod
 
